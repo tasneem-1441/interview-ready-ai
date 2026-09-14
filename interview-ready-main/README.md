@@ -26,7 +26,6 @@ RE-TEST PRACTICE PLAN: A view that renders 2-3 specific, actionable training tas
 
 sub-metric alongside a prominent 'Retest Now' button to cycle back into the application flow."
 
-This project was built with [Lovable](https://lovable.dev).
 
 
 
