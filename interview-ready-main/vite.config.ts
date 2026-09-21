@@ -1,17 +1,29 @@
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { defineConfig } from "vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import tailwindcss from "@tailwindcss/vite";
+import tsConfigPaths from "vite-tsconfig-paths";
+import viteReact from "@vitejs/plugin-react";
+import { nitro } from "nitro/vite";
 
 export default defineConfig({
-  tanstackStart: {
-    server: { entry: "server" },
-  },
-  nitro: {
-    preset: "node-server",
-  },
-  vite: {
-    resolve: {
-      alias: {
-        "punycode/": "punycode",
-      },
+  plugins: [
+    tsConfigPaths({ projects: ["./tsconfig.json"] }),
+    tailwindcss(),
+    tanstackStart({
+      server: { entry: "server" },
+    }),
+    nitro({
+      preset: "node-server",
+    }),
+    viteReact(),
+  ],
+  resolve: {
+    alias: {
+      "punycode/": "punycode",
     },
+  },
+  server: {
+    host: "::",
+    port: 8080,
   },
 });

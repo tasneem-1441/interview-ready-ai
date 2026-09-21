@@ -1,10 +1,9 @@
-/** Server-only helper for calling AI (Google Gemini directly or via Lovable AI Gateway) with strict JSON schema. */
+/** Server-only helper for calling AI (Google Gemini directly) with strict JSON schema. */
 
-const LOVABLE_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const GEMINI_OPENAI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
-export const AI_MODEL = "google/gemini-3.8-flash";
+export const AI_MODEL = "gemini-flash-lite-latest";
 
 /** Candidate Gemini models in order of priority with automatic failover on 503/429/404 */
 export const DIRECT_GEMINI_MODELS = [
@@ -31,29 +30,22 @@ export async function callGatewayJson<T>(
 ): Promise<T> {
   const geminiKey =
     overrideKey?.trim() || process.env["GEMINI_API_KEY"] || process.env["VITE_GEMINI_API_KEY"];
-  const lovableKey = process.env["LOVABLE_API_KEY"];
 
-  if (!geminiKey && !lovableKey) {
+  if (!geminiKey) {
     throw new AiGatewayError(
       401,
       "No AI API key configured. Add GEMINI_API_KEY to your .env file or settings.",
     );
   }
 
-  const endpoint = geminiKey ? GEMINI_OPENAI_ENDPOINT : LOVABLE_GATEWAY;
-  const modelsToTry = geminiKey ? [...DIRECT_GEMINI_MODELS] : [AI_MODEL];
+  const endpoint = GEMINI_OPENAI_ENDPOINT;
+  const modelsToTry = [...DIRECT_GEMINI_MODELS];
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "Authorization": `Bearer ${geminiKey}`,
+    "X-goog-api-key": geminiKey,
   };
-
-  if (geminiKey) {
-    headers["Authorization"] = `Bearer ${geminiKey}`;
-    headers["X-goog-api-key"] = geminiKey;
-  } else if (lovableKey) {
-    headers["Lovable-API-Key"] = lovableKey;
-    headers["X-Lovable-AIG-SDK"] = "fetch";
-  }
 
   let lastError: Error | null = null;
 
