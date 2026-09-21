@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
   ArrowRight,
@@ -14,6 +13,13 @@ import {
   User,
 } from "lucide-react";
 import { useAuth } from "@/lib/use-auth";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,26 +47,23 @@ function GoogleIcon() {
   );
 }
 
-const TITLE = "Sign In — NCS InterviewReady AI";
-const DESCRIPTION =
-  "Sign in or create an account to save your interview practice attempts, resume analysis, and preparation plans across devices.";
+interface AuthModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
+  defaultTab?: "signin" | "signup";
+}
 
-export const Route = createFileRoute("/auth")({
-  head: () => ({
-    meta: [
-      { title: TITLE },
-      { name: "description", content: DESCRIPTION },
-      { property: "og:title", content: TITLE },
-      { property: "og:description", content: DESCRIPTION },
-    ],
-  }),
-  component: AuthPage,
-});
+export function AuthModal({
+  open,
+  onOpenChange,
+  onSuccess,
+  defaultTab = "signin",
+}: AuthModalProps) {
+  const { signIn, signUp, triggerGoogleSignIn } = useAuth();
+  const [tab, setTab] = useState<"signin" | "signup">(defaultTab);
 
-function AuthPage() {
-  const { user, signIn, signUp, triggerGoogleSignIn } = useAuth();
-  const navigate = useNavigate();
-  const [tab, setTab] = useState<"signin" | "signup">("signin");
+  // Form states
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -71,23 +74,13 @@ function AuthPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If already logged in, redirect to preparation flow
-  if (user) {
-    return (
-      <div className="panel mx-auto max-w-md p-6 text-center sm:p-8 space-y-4 mt-6">
-        <CheckCircle2 className="mx-auto size-10 text-success" />
-        <h1 className="text-xl font-bold">You are already signed in</h1>
-        <p className="text-sm text-muted-foreground">
-          Logged in as <span className="font-semibold text-foreground">{user.email}</span>
-        </p>
-        <Button asChild size="lg" className="w-full">
-          <Link to="/prepare">
-            Go to Preparation <ArrowRight className="size-4" />
-          </Link>
-        </Button>
-      </div>
-    );
-  }
+  const resetForm = () => {
+    setError(null);
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setDisplayName("");
+  };
 
   const handleGoogleSignIn = async () => {
     setError(null);
@@ -100,7 +93,9 @@ function AuthPage() {
     try {
       await triggerGoogleSignIn();
       clearTimeout(safetyTimer);
-      void navigate({ to: "/prepare" });
+      resetForm();
+      onOpenChange(false);
+      onSuccess?.();
     } catch (err: any) {
       clearTimeout(safetyTimer);
       console.error("[Google Sign-In]", err);
@@ -115,12 +110,13 @@ function AuthPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
     try {
       await signIn(email, password);
-      void navigate({ to: "/prepare" });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sign in. Check your credentials.");
+      resetForm();
+      onOpenChange(false);
+      onSuccess?.();
+    } catch (err: any) {
+      setError(err?.message || "Invalid email or password.");
     } finally {
       setLoading(false);
     }
@@ -131,66 +127,65 @@ function AuthPage() {
     setError(null);
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match. Please re-enter matching passwords.");
-      return;
-    }
-
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long.");
+      setError("Passwords do not match.");
       return;
     }
 
     setLoading(true);
-
     try {
       await signUp(email, password, displayName);
-      void navigate({ to: "/prepare" });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sign up.");
+      resetForm();
+      onOpenChange(false);
+      onSuccess?.();
+    } catch (err: any) {
+      setError(err?.message || "Failed to create account.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="mx-auto max-w-md space-y-6 pt-4 sm:pt-8">
-      <div className="text-center space-y-2">
-        <div className="inline-grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-          <BrainCircuit className="size-6" />
-        </div>
-        <h1 className="font-display text-2xl font-bold sm:text-3xl">NCS InterviewReady AI</h1>
-        <p className="text-sm text-muted-foreground">
-          Sign in to save and sync your mock interview readiness scores to MongoDB
-        </p>
-      </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md sm:rounded-2xl p-6">
+        <DialogHeader className="text-center sm:text-center">
+          <div className="mx-auto grid size-11 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-sm mb-2">
+            <BrainCircuit className="size-6" />
+          </div>
+          <DialogTitle className="text-xl font-bold tracking-tight">
+            {tab === "signin" ? "Sign in to InterviewReady" : "Create your account"}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Sign in is required to start interview preparation and save your progress to MongoDB.
+          </DialogDescription>
+        </DialogHeader>
 
-      <section className="panel p-6 sm:p-8">
         {/* DIRECT GOOGLE SIGN-IN BUTTON */}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => void handleGoogleSignIn()}
-          disabled={googleLoading || loading}
-          className="flex min-h-11 w-full items-center justify-center gap-2.5 border-border font-semibold shadow-xs hover:bg-muted/50 cursor-pointer"
-        >
-          {googleLoading ? <Loader2 className="size-4 animate-spin" /> : <GoogleIcon />}
-          <span>Continue with Google</span>
-        </Button>
+        <div className="mt-1">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handleGoogleSignIn()}
+            disabled={googleLoading || loading}
+            className="flex min-h-11 w-full items-center justify-center gap-2.5 border-border font-semibold shadow-xs hover:bg-muted/50 cursor-pointer"
+          >
+            {googleLoading ? <Loader2 className="size-4 animate-spin" /> : <GoogleIcon />}
+            <span>Continue with Google</span>
+          </Button>
 
-        <div className="relative my-5 flex items-center justify-center">
-          <div className="w-full border-t border-border" />
-          <span className="absolute bg-card px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Or continue with email
-          </span>
+          <div className="relative my-4 flex items-center justify-center">
+            <div className="w-full border-t border-border" />
+            <span className="absolute bg-background px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Or continue with email
+            </span>
+          </div>
         </div>
 
         <Tabs
           value={tab}
-          onValueChange={(v) => {
-            setTab(v as "signin" | "signup");
+          onValueChange={(val) => {
+            setTab(val as "signin" | "signup");
             setError(null);
           }}
-          className="w-full"
         >
           <TabsList className="grid w-full grid-cols-2 rounded-xl">
             <TabsTrigger value="signin" className="rounded-lg text-xs font-semibold">
@@ -202,54 +197,50 @@ function AuthPage() {
           </TabsList>
 
           {error && (
-            <div
-              role="alert"
-              className="mt-4 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
-            >
+            <div className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
               <AlertTriangle className="size-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           {/* SIGN IN TAB */}
-          <TabsContent value="signin" className="mt-5 space-y-4">
-            <form onSubmit={handleSignIn} className="space-y-4">
-              <div className="space-y-1.5">
-                <label htmlFor="signin-email" className="text-xs font-semibold text-foreground">
+          <TabsContent value="signin" className="mt-4">
+            <form onSubmit={handleSignIn} className="space-y-3.5">
+              <div className="space-y-1.5 text-left">
+                <label htmlFor="modal-signin-email" className="text-xs font-semibold text-foreground">
                   Email Address
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-3 size-4 text-muted-foreground" />
                   <Input
-                    id="signin-email"
+                    id="modal-signin-email"
                     type="email"
                     required
-                    autoComplete="email"
                     placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-9"
+                    className="pl-9 text-sm"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="signin-password" className="text-xs font-semibold text-foreground">
-                    Password
-                  </label>
-                </div>
+              <div className="space-y-1.5 text-left">
+                <label
+                  htmlFor="modal-signin-password"
+                  className="text-xs font-semibold text-foreground"
+                >
+                  Password
+                </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 size-4 text-muted-foreground" />
                   <Input
-                    id="signin-password"
+                    id="modal-signin-password"
                     type={showPassword ? "text" : "password"}
                     required
-                    autoComplete="current-password"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-9 pr-10"
+                    className="pl-9 pr-10 text-sm"
                   />
                   <button
                     type="button"
@@ -266,74 +257,70 @@ function AuthPage() {
               <Button
                 type="submit"
                 disabled={loading || !email || !password}
-                className="min-h-12 w-full font-semibold"
+                className="mt-2 min-h-11 w-full font-semibold"
               >
-                {loading ? (
-                  <Loader2 className="size-4 animate-spin mr-2" />
-                ) : (
-                  <KeyRound className="size-4 mr-2" />
-                )}
+                {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <KeyRound className="size-4 mr-2" />}
                 Sign In & Continue
               </Button>
             </form>
           </TabsContent>
 
           {/* SIGN UP TAB */}
-          <TabsContent value="signup" className="mt-5 space-y-4">
-            <form onSubmit={handleSignUp} className="space-y-4">
-              <div className="space-y-1.5">
-                <label htmlFor="signup-name" className="text-xs font-semibold text-foreground">
+          <TabsContent value="signup" className="mt-4">
+            <form onSubmit={handleSignUp} className="space-y-3.5">
+              <div className="space-y-1.5 text-left">
+                <label htmlFor="modal-signup-name" className="text-xs font-semibold text-foreground">
                   Your Name (optional)
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 size-4 text-muted-foreground" />
                   <Input
-                    id="signup-name"
+                    id="modal-signup-name"
                     type="text"
-                    autoComplete="name"
                     placeholder="Jane Doe"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    className="pl-9"
+                    className="pl-9 text-sm"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label htmlFor="signup-email" className="text-xs font-semibold text-foreground">
+              <div className="space-y-1.5 text-left">
+                <label htmlFor="modal-signup-email" className="text-xs font-semibold text-foreground">
                   Email Address
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-3 size-4 text-muted-foreground" />
                   <Input
-                    id="signup-email"
+                    id="modal-signup-email"
                     type="email"
                     required
-                    autoComplete="email"
                     placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-9"
+                    className="pl-9 text-sm"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label htmlFor="signup-password" className="text-xs font-semibold text-foreground">
+              <div className="space-y-1.5 text-left">
+                <label
+                  htmlFor="modal-signup-password"
+                  className="text-xs font-semibold text-foreground"
+                >
                   Password (min 6 characters)
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 size-4 text-muted-foreground" />
                   <Input
-                    id="signup-password"
+                    id="modal-signup-password"
                     type={showPassword ? "text" : "password"}
                     required
                     minLength={6}
-                    autoComplete="new-password"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-9 pr-10"
+                    className="pl-9 pr-10 text-sm"
                   />
                   <button
                     type="button"
@@ -347,9 +334,9 @@ function AuthPage() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 text-left">
                 <label
-                  htmlFor="signup-confirm-password"
+                  htmlFor="modal-signup-confirm"
                   className="text-xs font-semibold text-foreground"
                 >
                   Confirm Password
@@ -357,15 +344,14 @@ function AuthPage() {
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 size-4 text-muted-foreground" />
                   <Input
-                    id="signup-confirm-password"
+                    id="modal-signup-confirm"
                     type={showConfirmPassword ? "text" : "password"}
                     required
                     minLength={6}
-                    autoComplete="new-password"
                     placeholder="••••••••"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="pl-9 pr-10"
+                    className="pl-9 pr-10 text-sm"
                   />
                   <button
                     type="button"
@@ -381,9 +367,6 @@ function AuthPage() {
                     )}
                   </button>
                 </div>
-                {confirmPassword && password !== confirmPassword && (
-                  <p className="text-[11px] font-medium text-destructive">Passwords do not match</p>
-                )}
                 {confirmPassword && password === confirmPassword && (
                   <p className="flex items-center gap-1 text-[11px] font-medium text-success">
                     <CheckCircle2 className="size-3" /> Passwords match
@@ -397,22 +380,17 @@ function AuthPage() {
                   loading ||
                   !email ||
                   password.length < 6 ||
-                  !confirmPassword ||
                   password !== confirmPassword
                 }
-                className="min-h-12 w-full font-semibold"
+                className="mt-2 min-h-11 w-full font-semibold"
               >
-                {loading ? (
-                  <Loader2 className="size-4 animate-spin mr-2" />
-                ) : (
-                  <ArrowRight className="size-4 mr-2" />
-                )}
+                {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <ArrowRight className="size-4 mr-2" />}
                 Create Account & Continue
               </Button>
             </form>
           </TabsContent>
         </Tabs>
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

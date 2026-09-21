@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
   ClipboardCheck,
@@ -10,9 +11,11 @@ import {
   Target,
 } from "lucide-react";
 import { useSession } from "@/lib/session-store";
+import { useAuth } from "@/lib/use-auth";
 import { STEP_LABELS } from "@/components/Stepper";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AuthModal } from "@/components/AuthModal";
 
 const TITLE = "NCS InterviewReady AI — Job Fit, Mock Interview & Readiness Score";
 const DESCRIPTION =
@@ -58,11 +61,31 @@ const FLOW = [
 
 function Overview() {
   const { ready, session, attempts } = useSession();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
   const last = attempts[attempts.length - 1];
   const inProgress = ready && session.job !== null && session.maxReached < 4;
 
+  const handleStartPreparing = () => {
+    if (!user) {
+      setAuthModalOpen(true);
+    } else {
+      navigate({ to: "/prepare" });
+    }
+  };
+
   return (
     <div className="space-y-8">
+      <AuthModal
+        open={authModalOpen}
+        onOpenChange={setAuthModalOpen}
+        onSuccess={() => {
+          navigate({ to: "/prepare" });
+        }}
+      />
+
       <section className="hero-glow overflow-hidden rounded-3xl border border-border p-6 sm:p-10">
         <p className="eyebrow">National Career Service</p>
         <h1 className="mt-2 max-w-2xl font-display text-3xl font-bold leading-tight sm:text-4xl">
@@ -73,11 +96,13 @@ function Overview() {
         </p>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <Button asChild size="lg" className="min-h-12 text-base font-semibold">
-            <Link to="/prepare">
-              {inProgress ? "Resume where you left off" : "Start preparing"}
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+          <Button
+            size="lg"
+            onClick={handleStartPreparing}
+            className="min-h-12 text-base font-semibold cursor-pointer"
+          >
+            {inProgress ? "Resume where you left off" : "Start preparing"}
+            <ArrowRight className="size-4" aria-hidden="true" />
           </Button>
           {attempts.length > 0 && (
             <Button asChild size="lg" variant="outline" className="min-h-12 text-base">

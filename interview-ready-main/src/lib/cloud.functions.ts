@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireMongoAuth } from "./auth-jwt";
+import { getCollections } from "./mongodb";
 
 /* ------------------------------------------------------------------ */
 /* Shapes                                                              */
@@ -62,160 +63,243 @@ export type CloudAttempt = {
 /* ------------------------------------------------------------------ */
 
 export const loadCloudData = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireMongoAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
+    const { userId } = context;
+    const { attempts, resumes, targetJobs } = await getCollections();
 
-    const [attemptsRes, resumeRes, jobRes] = await Promise.all([
-      supabase
-        .from("attempts")
-        .select("local_id, taken_at, job_title, org, readiness, metrics, questions_answered")
-        .eq("user_id", userId)
-        .order("taken_at", { ascending: true })
-        .limit(100),
-      supabase
-        .from("resumes")
-        .select("file_name, content, word_count")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("target_jobs")
-        .select("title, org, location, description, skills, source")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+    const [attemptDocs, resumeDoc, jobDoc] = await Promise.all([
+      attempts.find({ userId }).sort({ takenAt: 1 }).limit(100).toArray(),
+      resumes.findOne({ userId }, { sort: { updatedAt: -1 } }),
+      targetJobs.findOne({ userId }, { sort: { updatedAt: -1 } }),
     ]);
 
-    if (attemptsRes.error) throw new Error(attemptsRes.error.message);
-
-    const attempts: CloudAttempt[] = (attemptsRes.data ?? []).map((row: any) => ({
-      localId: row.local_id,
-      at: new Date(row.taken_at).getTime(),
-      jobTitle: row.job_title,
+    const mappedAttempts: CloudAttempt[] = attemptDocs.map((row) => ({
+      localId: row.localId,
+      at: new Date(row.takenAt).getTime(),
+      jobTitle: row.jobTitle,
       org: row.org,
       readiness: row.readiness,
       metrics: Array.isArray(row.metrics)
-        ? (row.metrics as { key: string; label: string; score: number }[])
+        ? row.metrics.map((m) => ({
+            key: String(m.key ?? ""),
+            label: String(m.label ?? ""),
+            score: Number(m.score ?? 0),
+          }))
         : [],
-      questionsAnswered: row.questions_answered,
+      questionsAnswered: row.questionsAnswered,
     }));
 
+    const resume = resumeDoc
+      ? {
+          fileName: resumeDoc.fileName,
+          file_name: resumeDoc.fileName,
+          content: resumeDoc.content,
+          wordCount: resumeDoc.wordCount,
+        }
+      : null;
+
+    const job = jobDoc
+      ? {
+          title: jobDoc.title,
+          org: jobDoc.org,
+          location: jobDoc.location,
+          description: jobDoc.description,
+          skills: jobDoc.skills ?? [],
+          source: jobDoc.source,
+        }
+      : null;
+
     return {
-      attempts,
-      resume: resumeRes.data ?? null,
-      job: jobRes.data ?? null,
+      attempts: mappedAttempts,
+      resume,
+      job,
+      targetJob: job,
     };
   });
 
 /* ------------------------------------------------------------------ */
-/* Writes                                                              */
+/* Append / Upsert multiple attempts                                   */
 /* ------------------------------------------------------------------ */
 
 export const saveCloudAttempts = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z.object({ attempts: z.array(AttemptInput).min(1).max(50) }).parse(input),
+  .middleware([requireMongoAuth])
+  .validator((data: unknown) =>
+    z
+      .object({
+        attempts: z.array(AttemptInput).max(50),
+      })
+      .parse(data),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const rows = data.attempts.map((a) => ({
-      user_id: userId,
-      local_id: a.localId,
-      taken_at: new Date(a.at).toISOString(),
-      job_title: a.jobTitle,
-      org: a.org,
-      readiness: a.readiness,
-      metrics: a.metrics,
-      transcript: a.transcript,
-      voice_metrics: a.voiceMetrics,
-      star: a.star,
-      questions_answered: a.questionsAnswered,
-    }));
-    const { error } = await supabase
-      .from("attempts")
-      .upsert(rows as any, { onConflict: "user_id,local_id" });
-    if (error) throw new Error(error.message);
-    return { saved: rows.length };
+  .handler(async ({ context, data }) => {
+    const { userId } = context;
+    const { attempts } = await getCollections();
+    const now = new Date();
+
+    for (const a of data.attempts) {
+      await attempts.updateOne(
+        { userId, localId: a.localId },
+        {
+          $set: {
+            takenAt: new Date(a.at),
+            jobTitle: a.jobTitle,
+            org: a.org,
+            readiness: a.readiness,
+            metrics: a.metrics,
+            questionsAnswered: a.questionsAnswered,
+            transcript: a.transcript,
+            voiceMetrics: a.voiceMetrics,
+            star: a.star,
+          },
+          $setOnInsert: {
+            userId,
+            localId: a.localId,
+            createdAt: now,
+          },
+        },
+        { upsert: true },
+      );
+    }
+
+    return { ok: true };
   });
+
+/* Single attempt fallback */
+export const saveCloudAttempt = createServerFn({ method: "POST" })
+  .middleware([requireMongoAuth])
+  .validator((data: unknown) => AttemptInput.parse(data))
+  .handler(async ({ context, data: a }) => {
+    const { userId } = context;
+    const { attempts } = await getCollections();
+    const now = new Date();
+
+    await attempts.updateOne(
+      { userId, localId: a.localId },
+      {
+        $set: {
+          takenAt: new Date(a.at),
+          jobTitle: a.jobTitle,
+          org: a.org,
+          readiness: a.readiness,
+          metrics: a.metrics,
+          questionsAnswered: a.questionsAnswered,
+          transcript: a.transcript,
+          voiceMetrics: a.voiceMetrics,
+          star: a.star,
+        },
+        $setOnInsert: {
+          userId,
+          localId: a.localId,
+          createdAt: now,
+        },
+      },
+      { upsert: true },
+    );
+
+    return { ok: true };
+  });
+
+/* ------------------------------------------------------------------ */
+/* Upsert latest resume                                               */
+/* ------------------------------------------------------------------ */
 
 export const saveCloudResume = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .middleware([requireMongoAuth])
+  .validator((data: unknown) =>
     z
       .object({
-        fileName: z.string().max(300).nullable().default(null),
-        content: z.string().max(200000).default(""),
-        wordCount: z.number().int().min(0).default(0),
+        fileName: z.string().max(255).nullable().default(null),
+        content: z.string().max(60000),
+        wordCount: z.number().int().min(0),
       })
-      .parse(input),
+      .parse(data),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const existing = await supabase
-      .from("resumes")
-      .select("id")
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  .handler(async ({ context, data }) => {
+    const { userId } = context;
+    const { resumes } = await getCollections();
+    const now = new Date();
 
-    const payload = {
-      user_id: userId,
-      file_name: data.fileName,
-      content: data.content,
-      word_count: data.wordCount,
-    };
+    await resumes.updateOne(
+      { userId },
+      {
+        $set: {
+          fileName: data.fileName,
+          content: data.content,
+          wordCount: data.wordCount,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          userId,
+          createdAt: now,
+        },
+      },
+      { upsert: true },
+    );
 
-    const { error } = existing.data?.id
-      ? await supabase.from("resumes").update(payload).eq("id", existing.data.id)
-      : await supabase.from("resumes").insert(payload);
-    if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/* ------------------------------------------------------------------ */
+/* Upsert latest target job                                           */
+/* ------------------------------------------------------------------ */
 
 export const saveCloudJob = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .middleware([requireMongoAuth])
+  .validator((data: unknown) =>
     z
       .object({
-        title: z.string().min(1).max(200),
-        org: z.string().max(200).default(""),
-        location: z.string().max(200).default(""),
-        description: z.string().max(20000).default(""),
-        skills: z.array(z.string().max(80)).max(50).default([]),
-        source: z.string().max(20).default("custom"),
+        title: z.string().max(200),
+        org: z.string().max(200),
+        location: z.string().max(200).optional(),
+        description: z.string().max(30000),
+        skills: z.array(z.string().max(100)).max(60),
+        source: z.string().max(50),
       })
-      .parse(input),
+      .parse(data),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const existing = await supabase
-      .from("target_jobs")
-      .select("id")
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  .handler(async ({ context, data }) => {
+    const { userId } = context;
+    const { targetJobs } = await getCollections();
+    const now = new Date();
 
-    const payload = { user_id: userId, ...data };
-    const { error } = existing.data?.id
-      ? await supabase.from("target_jobs").update(payload).eq("id", existing.data.id)
-      : await supabase.from("target_jobs").insert(payload);
-    if (error) throw new Error(error.message);
+    await targetJobs.updateOne(
+      { userId },
+      {
+        $set: {
+          title: data.title,
+          org: data.org,
+          location: data.location,
+          description: data.description,
+          skills: data.skills,
+          source: data.source,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          userId,
+          createdAt: now,
+        },
+      },
+      { upsert: true },
+    );
+
     return { ok: true };
   });
 
-/** Privacy safeguard: removes every stored row for the signed-in person. */
+/* ------------------------------------------------------------------ */
+/* Delete everything for the signed-in person (privacy wipe)           */
+/* ------------------------------------------------------------------ */
+
 export const deleteCloudData = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireMongoAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    for (const table of ["attempts", "resumes", "target_jobs"] as const) {
-      const { error } = await supabase.from(table).delete().eq("user_id", userId);
-      if (error) throw new Error(error.message);
-    }
+    const { userId } = context;
+    const { attempts, resumes, targetJobs } = await getCollections();
+
+    await Promise.all([
+      attempts.deleteMany({ userId }),
+      resumes.deleteMany({ userId }),
+      targetJobs.deleteMany({ userId }),
+    ]);
+
     return { ok: true };
   });
