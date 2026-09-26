@@ -1,6 +1,6 @@
 // Service Worker for NCS InterviewReady AI
-const CACHE_NAME = "ncs-interviewready-v1";
-const STATIC_ASSETS = ["/", "/manifest.json", "/favicon.ico"];
+const CACHE_NAME = "ncs-interviewready-v2";
+const STATIC_ASSETS = ["/", "/manifest.json", "/favicon.svg", "/favicon.ico"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

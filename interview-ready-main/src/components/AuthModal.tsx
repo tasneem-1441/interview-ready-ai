@@ -96,10 +96,10 @@ export function AuthModal({
       resetForm();
       onOpenChange(false);
       onSuccess?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearTimeout(safetyTimer);
       console.error("[Google Sign-In]", err);
-      setError(err?.message || "Google Sign-In failed or popup was closed.");
+      setError(err instanceof Error ? err.message : "Google Sign-In failed or popup was closed.");
     } finally {
       clearTimeout(safetyTimer);
       setGoogleLoading(false);
@@ -115,8 +115,8 @@ export function AuthModal({
       resetForm();
       onOpenChange(false);
       onSuccess?.();
-    } catch (err: any) {
-      setError(err?.message || "Invalid email or password.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Invalid email or password.");
     } finally {
       setLoading(false);
     }
@@ -137,8 +137,8 @@ export function AuthModal({
       resetForm();
       onOpenChange(false);
       onSuccess?.();
-    } catch (err: any) {
-      setError(err?.message || "Failed to create account.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create account.");
     } finally {
       setLoading(false);
     }
@@ -207,7 +207,10 @@ export function AuthModal({
           <TabsContent value="signin" className="mt-4">
             <form onSubmit={handleSignIn} className="space-y-3.5">
               <div className="space-y-1.5 text-left">
-                <label htmlFor="modal-signin-email" className="text-xs font-semibold text-foreground">
+                <label
+                  htmlFor="modal-signin-email"
+                  className="text-xs font-semibold text-foreground"
+                >
                   Email Address
                 </label>
                 <div className="relative">
@@ -259,7 +262,11 @@ export function AuthModal({
                 disabled={loading || !email || !password}
                 className="mt-2 min-h-11 w-full font-semibold"
               >
-                {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <KeyRound className="size-4 mr-2" />}
+                {loading ? (
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                ) : (
+                  <KeyRound className="size-4 mr-2" />
+                )}
                 Sign In & Continue
               </Button>
             </form>
@@ -269,7 +276,10 @@ export function AuthModal({
           <TabsContent value="signup" className="mt-4">
             <form onSubmit={handleSignUp} className="space-y-3.5">
               <div className="space-y-1.5 text-left">
-                <label htmlFor="modal-signup-name" className="text-xs font-semibold text-foreground">
+                <label
+                  htmlFor="modal-signup-name"
+                  className="text-xs font-semibold text-foreground"
+                >
                   Your Name (optional)
                 </label>
                 <div className="relative">
@@ -286,7 +296,10 @@ export function AuthModal({
               </div>
 
               <div className="space-y-1.5 text-left">
-                <label htmlFor="modal-signup-email" className="text-xs font-semibold text-foreground">
+                <label
+                  htmlFor="modal-signup-email"
+                  className="text-xs font-semibold text-foreground"
+                >
                   Email Address
                 </label>
                 <div className="relative">
@@ -376,15 +389,14 @@ export function AuthModal({
 
               <Button
                 type="submit"
-                disabled={
-                  loading ||
-                  !email ||
-                  password.length < 6 ||
-                  password !== confirmPassword
-                }
+                disabled={loading || !email || password.length < 6 || password !== confirmPassword}
                 className="mt-2 min-h-11 w-full font-semibold"
               >
-                {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <ArrowRight className="size-4 mr-2" />}
+                {loading ? (
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                ) : (
+                  <ArrowRight className="size-4 mr-2" />
+                )}
                 Create Account & Continue
               </Button>
             </form>

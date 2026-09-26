@@ -1,7 +1,7 @@
 export type TargetJob = {
   title: string;
   org: string;
-  location?: string;
+  location?: string | undefined;
   description: string;
   skills: string[];
   source: "ncs" | "custom";

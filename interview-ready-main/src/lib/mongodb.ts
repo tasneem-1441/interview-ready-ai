@@ -3,10 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 export function getCleanMongoUri(): string {
-  const rawUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/interview_ready";
+  const rawUri =
+    process.env["MONGODB_URI"] ||
+    "mongodb+srv://tasneem8_db_user:Tasneem.m%404733@newcluster.ei7r6y1.mongodb.net/interview_ready?appName=newcluster";
   try {
     const protocolMatch = rawUri.match(/^(mongodb(\+srv)?:\/\/)(.*)$/);
-    if (!protocolMatch) return rawUri;
+    if (!protocolMatch || !protocolMatch[1] || !protocolMatch[3]) return rawUri;
     const rest = protocolMatch[3];
     const lastAtIdx = rest.lastIndexOf("@");
     if (lastAtIdx === -1) return rawUri;
@@ -37,30 +39,34 @@ let indexesInitialized = false;
 const DATA_DIR = path.resolve(process.cwd(), ".data");
 const DB_FILE = path.join(DATA_DIR, "local_db.json");
 
-function ensureDbFile(): {
-  users: any[];
-  attempts: any[];
-  resumes: any[];
-  target_jobs: any[];
-} {
+type DbRecord = Record<string, unknown>;
+
+interface LocalDatabase {
+  users: DbRecord[];
+  attempts: DbRecord[];
+  resumes: DbRecord[];
+  target_jobs: DbRecord[];
+}
+
+function ensureDbFile(): LocalDatabase {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     if (!fs.existsSync(DB_FILE)) {
-      const initial = { users: [], attempts: [], resumes: [], target_jobs: [] };
+      const initial: LocalDatabase = { users: [], attempts: [], resumes: [], target_jobs: [] };
       fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2), "utf8");
       return initial;
     }
     const raw = fs.readFileSync(DB_FILE, "utf8");
-    return JSON.parse(raw);
+    return JSON.parse(raw) as LocalDatabase;
   } catch (err) {
     console.error("[LocalDB] Error reading local store:", err);
     return { users: [], attempts: [], resumes: [], target_jobs: [] };
   }
 }
 
-function saveDbFile(data: any) {
+function saveDbFile(data: LocalDatabase) {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -71,13 +77,14 @@ function saveDbFile(data: any) {
   }
 }
 
-function matchQuery(item: any, query: any): boolean {
+function matchQuery(item: DbRecord, query?: Record<string, unknown> | null): boolean {
   if (!query || Object.keys(query).length === 0) return true;
   for (const [key, val] of Object.entries(query)) {
     if (key === "_id") {
-      if (String(item._id) !== String(val)) return false;
+      if (String(item["_id"]) !== String(val)) return false;
     } else if (key === "email") {
-      if (String(item.email || "").toLowerCase() !== String(val || "").toLowerCase()) return false;
+      if (String(item["email"] || "").toLowerCase() !== String(val || "").toLowerCase())
+        return false;
     } else {
       if (item[key] !== val) return false;
     }
@@ -85,18 +92,27 @@ function matchQuery(item: any, query: any): boolean {
   return true;
 }
 
-function createLocalCollection<T>(collectionKey: "users" | "attempts" | "resumes" | "target_jobs") {
+function createLocalCollection<T = DbRecord>(collectionKey: keyof LocalDatabase) {
   return {
-    async findOne(query: any, options?: { sort?: Record<string, number> }) {
+    async findOne(query?: Record<string, unknown>, options?: { sort?: Record<string, number> }) {
       const db = ensureDbFile();
-      const list: any[] = db[collectionKey] || [];
-      let matched = list.filter((item) => matchQuery(item, query));
+      const list: DbRecord[] = db[collectionKey] || [];
+      const matched = list.filter((item) => matchQuery(item, query));
       if (options?.sort) {
-        const [sortKey, sortDir] = Object.entries(options.sort)[0] || [];
-        if (sortKey) {
+        const entries = Object.entries(options.sort);
+        const firstEntry = entries[0];
+        if (firstEntry) {
+          const [sortKey, sortVal] = firstEntry;
+          const sortDir = typeof sortVal === "number" ? sortVal : 1;
           matched.sort((a, b) => {
-            const va = new Date(a[sortKey] || 0).getTime() || a[sortKey];
-            const vb = new Date(b[sortKey] || 0).getTime() || b[sortKey];
+            const va =
+              new Date((a[sortKey] as string | number | Date) || 0).getTime() ||
+              Number(a[sortKey]) ||
+              0;
+            const vb =
+              new Date((b[sortKey] as string | number | Date) || 0).getTime() ||
+              Number(b[sortKey]) ||
+              0;
             if (va < vb) return -sortDir;
             if (va > vb) return sortDir;
             return 0;
@@ -104,18 +120,22 @@ function createLocalCollection<T>(collectionKey: "users" | "attempts" | "resumes
         }
       }
       const item = matched[0];
-      return item ? structuredClone(item) : null;
+      return item ? (structuredClone(item) as unknown as T) : null;
     },
 
-    async insertOne(doc: any) {
+    async insertOne(doc: Partial<T> & Record<string, unknown>) {
       const db = ensureDbFile();
-      const list: any[] = db[collectionKey] || [];
-      const _id = doc._id || new ObjectId();
-      const newDoc = {
+      const list: DbRecord[] = db[collectionKey] || [];
+      const _id = (doc["_id"] as ObjectId | string | undefined) || new ObjectId();
+      const newDoc: DbRecord = {
         ...doc,
         _id,
-        createdAt: doc.createdAt ? new Date(doc.createdAt) : new Date(),
-        updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : new Date(),
+        createdAt: doc["createdAt"]
+          ? new Date(doc["createdAt"] as string | number | Date)
+          : new Date(),
+        updatedAt: doc["updatedAt"]
+          ? new Date(doc["updatedAt"] as string | number | Date)
+          : new Date(),
       };
       list.push(newDoc);
       db[collectionKey] = list;
@@ -123,22 +143,30 @@ function createLocalCollection<T>(collectionKey: "users" | "attempts" | "resumes
       return { insertedId: _id, acknowledged: true };
     },
 
-    async updateOne(filter: any, update: any, options?: { upsert?: boolean }) {
+    async updateOne(
+      filter: Record<string, unknown>,
+      update: { $set?: DbRecord; $setOnInsert?: DbRecord },
+      options?: { upsert?: boolean },
+    ) {
       const db = ensureDbFile();
-      const list: any[] = db[collectionKey] || [];
+      const list: DbRecord[] = db[collectionKey] || [];
       const index = list.findIndex((item) => matchQuery(item, filter));
 
       if (index === -1) {
         if (options?.upsert) {
           const _id = new ObjectId();
           const now = new Date();
-          const newDoc = {
+          const newDoc: DbRecord = {
             _id,
             ...filter,
             ...(update.$setOnInsert || {}),
             ...(update.$set || {}),
-            createdAt: update.$setOnInsert?.createdAt || now,
-            updatedAt: update.$set?.updatedAt || now,
+            createdAt: update.$setOnInsert?.["createdAt"]
+              ? new Date(update.$setOnInsert["createdAt"] as string | number | Date)
+              : now,
+            updatedAt: update.$set?.["updatedAt"]
+              ? new Date(update.$set["updatedAt"] as string | number | Date)
+              : now,
           };
           list.push(newDoc);
           db[collectionKey] = list;
@@ -152,7 +180,9 @@ function createLocalCollection<T>(collectionKey: "users" | "attempts" | "resumes
         list[index] = {
           ...list[index],
           ...update.$set,
-          updatedAt: update.$set.updatedAt || new Date(),
+          updatedAt: update.$set["updatedAt"]
+            ? new Date(update.$set["updatedAt"] as string | number | Date)
+            : new Date(),
         };
       }
       db[collectionKey] = list;
@@ -160,17 +190,18 @@ function createLocalCollection<T>(collectionKey: "users" | "attempts" | "resumes
       return { modifiedCount: 1, matchedCount: 1, acknowledged: true };
     },
 
-    find(filter: any) {
+    find(filter?: Record<string, unknown>) {
       let sortKey: string | null = null;
       let sortDir = 1;
       let limitCount = 0;
 
       return {
         sort(sortObj: Record<string, number>) {
-          const [key, dir] = Object.entries(sortObj)[0] || [];
-          if (key) {
-            sortKey = key;
-            sortDir = dir;
+          const entries = Object.entries(sortObj);
+          const firstEntry = entries[0];
+          if (firstEntry) {
+            sortKey = firstEntry[0];
+            sortDir = typeof firstEntry[1] === "number" ? firstEntry[1] : 1;
           }
           return this;
         },
@@ -180,28 +211,32 @@ function createLocalCollection<T>(collectionKey: "users" | "attempts" | "resumes
         },
         async toArray() {
           const db = ensureDbFile();
-          const list: any[] = db[collectionKey] || [];
+          const list: DbRecord[] = db[collectionKey] || [];
           let matches = list.filter((item) => matchQuery(item, filter));
           if (sortKey) {
+            const key = sortKey;
+            const dir = sortDir;
             matches.sort((a, b) => {
-              const va = new Date(a[sortKey!] || 0).getTime() || a[sortKey!];
-              const vb = new Date(b[sortKey!] || 0).getTime() || b[sortKey!];
-              if (va < vb) return -sortDir;
-              if (va > vb) return sortDir;
+              const va =
+                new Date((a[key] as string | number | Date) || 0).getTime() || Number(a[key]) || 0;
+              const vb =
+                new Date((b[key] as string | number | Date) || 0).getTime() || Number(b[key]) || 0;
+              if (va < vb) return -dir;
+              if (va > vb) return dir;
               return 0;
             });
           }
           if (limitCount > 0) {
             matches = matches.slice(0, limitCount);
           }
-          return structuredClone(matches);
+          return structuredClone(matches) as unknown as T[];
         },
       };
     },
 
-    async deleteMany(filter: any) {
+    async deleteMany(filter?: Record<string, unknown>) {
       const db = ensureDbFile();
-      const list: any[] = db[collectionKey] || [];
+      const list: DbRecord[] = db[collectionKey] || [];
       const remaining = list.filter((item) => !matchQuery(item, filter));
       const deletedCount = list.length - remaining.length;
       db[collectionKey] = remaining;
@@ -234,11 +269,12 @@ async function initMongoOrFallback(): Promise<MongoClient | null> {
       client = mongo;
       console.log("[MongoDB] Connected successfully to:", cleanUri.replace(/\/\/[^@]+@/, "//***@"));
       return client;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.warn(
-        `[MongoDB] Notice: Could not connect to MongoDB at "${cleanUri.replace(/\/\/[^@]+@/, "//***@")}" (${err?.message || "connection failed"}). ` +
+        `[MongoDB] Notice: Could not connect to MongoDB at "${cleanUri.replace(/\/\/[^@]+@/, "//***@")}" (${errMsg || "connection failed"}). ` +
           `Automatically using resilient local file storage at ".data/local_db.json". ` +
-          `Authentication, mock interviews, and resumes will work immediately without interruption.`
+          `Authentication, mock interviews, and resumes will work immediately without interruption.`,
       );
       useLocalFallback = true;
       return null;
@@ -268,16 +304,16 @@ export function isUsingLocalFallback(): boolean {
 /* ------------------------------------------------------------------ */
 
 export interface UserDoc {
-  _id?: any;
+  _id?: ObjectId | string;
   email: string;
   passwordHash: string;
-  displayName?: string;
+  displayName?: string | undefined;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface AttemptDoc {
-  _id?: any;
+  _id?: ObjectId | string;
   userId: string;
   localId: string;
   takenAt: Date;
@@ -305,7 +341,7 @@ export interface AttemptDoc {
 }
 
 export interface ResumeDoc {
-  _id?: any;
+  _id?: ObjectId | string;
   userId: string;
   fileName: string | null;
   content: string;
@@ -315,11 +351,11 @@ export interface ResumeDoc {
 }
 
 export interface TargetJobDoc {
-  _id?: any;
+  _id?: ObjectId | string;
   userId: string;
   title: string;
   org: string;
-  location?: string;
+  location?: string | undefined;
   description: string;
   skills: string[];
   source: string;
@@ -357,6 +393,8 @@ export async function getCollections() {
     users: createLocalCollection<UserDoc>("users") as unknown as Collection<UserDoc>,
     attempts: createLocalCollection<AttemptDoc>("attempts") as unknown as Collection<AttemptDoc>,
     resumes: createLocalCollection<ResumeDoc>("resumes") as unknown as Collection<ResumeDoc>,
-    targetJobs: createLocalCollection<TargetJobDoc>("target_jobs") as unknown as Collection<TargetJobDoc>,
+    targetJobs: createLocalCollection<TargetJobDoc>(
+      "target_jobs",
+    ) as unknown as Collection<TargetJobDoc>,
   };
 }

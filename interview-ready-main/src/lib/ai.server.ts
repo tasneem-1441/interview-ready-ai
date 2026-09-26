@@ -43,7 +43,7 @@ export async function callGatewayJson<T>(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${geminiKey}`,
+    Authorization: `Bearer ${geminiKey}`,
     "X-goog-api-key": geminiKey,
   };
 
@@ -68,12 +68,14 @@ export async function callGatewayJson<T>(
         const body = await res.text();
         let message = body.slice(0, 300);
         try {
-          const parsed = JSON.parse(body) as any;
+          const parsed = JSON.parse(body) as
+            | { error?: { message?: string }; message?: string }
+            | Array<{ error?: { message?: string } }>;
           if (Array.isArray(parsed) && parsed[0]?.error?.message) {
             message = parsed[0].error.message;
-          } else if (parsed?.error?.message) {
+          } else if (!Array.isArray(parsed) && parsed?.error?.message) {
             message = parsed.error.message;
-          } else if (parsed?.message) {
+          } else if (!Array.isArray(parsed) && parsed?.message) {
             message = parsed.message;
           }
         } catch {

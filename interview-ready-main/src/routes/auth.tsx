@@ -101,10 +101,10 @@ function AuthPage() {
       await triggerGoogleSignIn();
       clearTimeout(safetyTimer);
       void navigate({ to: "/prepare" });
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearTimeout(safetyTimer);
       console.error("[Google Sign-In]", err);
-      setError(err?.message || "Google Sign-In failed or popup was closed.");
+      setError(err instanceof Error ? err.message : "Google Sign-In failed or popup was closed.");
     } finally {
       clearTimeout(safetyTimer);
       setGoogleLoading(false);
@@ -235,7 +235,10 @@ function AuthPage() {
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label htmlFor="signin-password" className="text-xs font-semibold text-foreground">
+                  <label
+                    htmlFor="signin-password"
+                    className="text-xs font-semibold text-foreground"
+                  >
                     Password
                   </label>
                 </div>

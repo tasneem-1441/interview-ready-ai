@@ -78,7 +78,9 @@ export function useSpeech() {
     if (recRef.current) {
       try {
         recRef.current.stop();
-      } catch {}
+      } catch {
+        /* ignore if already stopped */
+      }
       recRef.current = null;
     }
 
@@ -86,7 +88,9 @@ export function useSpeech() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       try {
         mediaRecorderRef.current.stop();
-      } catch {}
+      } catch {
+        /* ignore if already stopped */
+      }
     }
 
     // Stop microphone tracks

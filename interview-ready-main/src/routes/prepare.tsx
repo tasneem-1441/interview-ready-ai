@@ -141,7 +141,17 @@ function PreparePage() {
       }
 
       update({ report: built, answers, step: 3, maxReached: Math.max(maxReached, 3) });
-      recordAttempt(built, answers);
+      if (job) {
+        recordAttempt({
+          id: `${job.title}-${attempt}-${Date.now()}`,
+          at: Date.now(),
+          jobTitle: job.title,
+          org: job.org,
+          readiness: built.readiness,
+          metrics: built.metrics.map((m) => ({ key: m.key, label: m.label, score: m.score })),
+          questionsAnswered: answers.length,
+        });
+      }
       setScoring(false);
       setPending(null);
     },
@@ -153,11 +163,21 @@ function PreparePage() {
     const gaps = (analysis?.gaps ?? []).map((g) => g.skill);
     const built = buildReport(analysis?.fitScore ?? 0, pending, null, gaps, job?.title);
     update({ report: built, answers: pending, step: 3, maxReached: Math.max(maxReached, 3) });
-    recordAttempt(built, pending);
+    if (job) {
+      recordAttempt({
+        id: `${job.title}-${attempt}-${Date.now()}`,
+        at: Date.now(),
+        jobTitle: job.title,
+        org: job.org,
+        readiness: built.readiness,
+        metrics: built.metrics.map((m) => ({ key: m.key, label: m.label, score: m.score })),
+        questionsAnswered: pending.length,
+      });
+    }
     setScoring(false);
     setScoreError(null);
     setPending(null);
-  }, [analysis, job, maxReached, pending, recordAttempt, update]);
+  }, [analysis, attempt, job, maxReached, pending, recordAttempt, update]);
 
   if (authLoading || !ready) {
     return (
@@ -172,18 +192,15 @@ function PreparePage() {
   if (!user) {
     return (
       <div className="panel hero-glow mx-auto max-w-lg p-6 sm:p-8 text-center space-y-5 mt-4">
-        <AuthModal
-          open={authModalOpen}
-          onOpenChange={setAuthModalOpen}
-        />
+        <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
         <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary">
           <Lock className="size-7" />
         </div>
         <div className="space-y-2">
           <h1 className="text-2xl font-bold tracking-tight">Sign In Required</h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            You must be logged in to access the NCS InterviewReady AI preparation simulator,
-            analyze your resume fit, and save your practice scores to MongoDB.
+            You must be logged in to access the NCS InterviewReady AI preparation simulator, analyze
+            your resume fit, and save your practice scores to MongoDB.
           </p>
         </div>
         <Button

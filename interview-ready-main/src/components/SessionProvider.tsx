@@ -107,7 +107,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
         // Hydrate cloud job & resume if local state is empty
         setSession((current) => {
-          let updated = { ...current };
+          const updated = { ...current };
           if (!current.job && cloud.job) {
             updated.job = {
               title: cloud.job.title,

@@ -70,7 +70,9 @@ export const signInWithEmail = createServerFn({ method: "POST" })
 
     const user = await users.findOne({ email });
     if (!user) {
-      throw new Error("No account found with this email. Please switch to the 'Create Account' tab to register first, or Continue with Google.");
+      throw new Error(
+        "No account found with this email. Please switch to the 'Create Account' tab to register first, or Continue with Google.",
+      );
     }
 
     const isMatch = await bcrypt.compare(data.password, user.passwordHash);
@@ -157,15 +159,19 @@ export const signInWithGoogle = createServerFn({ method: "POST" })
     const { users } = await getCollections();
     const now = new Date();
 
-    let user = await users.findOne({ email });
+    const user = await users.findOne({ email });
     let userId: string;
+
+    const finalDisplayName: string = String(
+      user?.displayName || displayName || email.split("@")[0] || "",
+    );
 
     if (!user) {
       // Create new user linked with Google
       const insertRes = await users.insertOne({
         email,
         passwordHash: "", // Google OAuth user
-        displayName,
+        displayName: finalDisplayName,
         createdAt: now,
         updatedAt: now,
       });
@@ -177,20 +183,20 @@ export const signInWithGoogle = createServerFn({ method: "POST" })
         {
           $set: {
             updatedAt: now,
-            displayName: user.displayName || displayName,
+            displayName: finalDisplayName,
           },
         },
       );
     }
 
-    const token = await signAuthToken({ userId, email, displayName });
+    const token = await signAuthToken({ userId, email, displayName: finalDisplayName });
 
     return {
       token,
       user: {
         id: userId,
         email,
-        displayName,
+        displayName: finalDisplayName,
       },
     };
   });

@@ -1,6 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { BrainCircuit, Database, Home, LineChart, LogIn, LogOut, Sparkles, User } from "lucide-react";
+import {
+  BrainCircuit,
+  Database,
+  Home,
+  LineChart,
+  LogIn,
+  LogOut,
+  Sparkles,
+  User,
+} from "lucide-react";
 import { signOut, useAuth } from "@/lib/use-auth";
 import { AiKeyModal } from "./AiKeyModal";
 import { AuthModal } from "./AuthModal";

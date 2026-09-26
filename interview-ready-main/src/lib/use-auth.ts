@@ -9,7 +9,7 @@ import {
 export interface AuthUser {
   id: string;
   email: string;
-  displayName: string;
+  displayName?: string | undefined;
 }
 
 export type AuthState = {
@@ -21,20 +21,32 @@ export type AuthState = {
 const TOKEN_KEY = "AUTH_TOKEN";
 const USER_KEY = "AUTH_USER";
 
+interface GoogleNotification {
+  isNotDisplayed?: () => boolean;
+  isSkippedMoment?: () => boolean;
+  getNotDisplayedReason?: () => string;
+}
+
+interface GoogleTokenResponse {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
+}
+
 declare global {
   interface Window {
     google?: {
       accounts: {
         id: {
-          initialize: (config: any) => void;
-          prompt: (notification?: (notification: any) => void) => void;
+          initialize: (config: Record<string, unknown>) => void;
+          prompt: (notification?: (notification: GoogleNotification) => void) => void;
         };
         oauth2: {
           initTokenClient: (config: {
             client_id: string;
             scope: string;
-            callback: (response: any) => void;
-            error_callback?: (error: any) => void;
+            callback: (response: GoogleTokenResponse) => void;
+            error_callback?: (error: unknown) => void;
           }) => {
             requestAccessToken: (options?: { prompt?: string }) => void;
           };
@@ -186,9 +198,8 @@ export function useAuth(): AuthState & {
 
     const clientId =
       (typeof window !== "undefined" &&
-        ((window as any).VITE_GOOGLE_CLIENT_ID ||
-          localStorage.getItem("GOOGLE_CLIENT_ID"))) ||
-      import.meta.env.VITE_GOOGLE_CLIENT_ID;
+        ((window as any).VITE_GOOGLE_CLIENT_ID || localStorage.getItem("GOOGLE_CLIENT_ID"))) ||
+      import.meta.env["VITE_GOOGLE_CLIENT_ID"];
 
     if (!clientId) {
       throw new Error(

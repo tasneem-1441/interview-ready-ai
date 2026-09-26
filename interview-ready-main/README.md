@@ -26,9 +26,6 @@ RE-TEST PRACTICE PLAN: A view that renders 2-3 specific, actionable training tas
 
 sub-metric alongside a prominent 'Retest Now' button to cycle back into the application flow."
 
-
-
-
 ## Development
 
 Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
